@@ -16,7 +16,7 @@ pipeline:
       event: push
       branch: master
     image: plugins/docker
-    repo: registry.usw.co/cloud/exporter/certificate-init-container
+    repo: registry.usw.co/cloud/certificate-init-container
     tags:
       - latest
       - "${DRONE_COMMIT}"
