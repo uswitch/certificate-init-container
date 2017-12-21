@@ -199,6 +199,10 @@ func main() {
 			Message:        &message,
 			LastUpdateTime: &timeNow,
 		})
+		_, err = client.CertificatesV1Beta1().UpdateCertificateSigningRequest(context.Background(), csr)
+		if err != nil {
+			log.Fatalf("unable to approve the certificate signing request: %s", err)
+		}
 		break
 	}
 
