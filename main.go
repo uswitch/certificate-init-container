@@ -12,7 +12,6 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -28,10 +27,10 @@ import (
 	"strings"
 	"time"
 
-	certificates "github.com/ericchiang/k8s/apis/certificates/v1beta1"
-
-	"github.com/ericchiang/k8s"
-	"github.com/ericchiang/k8s/apis/meta/v1"
+	certificates "k8s.io/api/certificates/v1beta1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -62,10 +61,16 @@ func main() {
 
 	certificateSigningRequestName := fmt.Sprintf("%s-%s", podName, namespace)
 
-	client, err := k8s.NewInClusterClient()
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		log.Fatalf("unable to create a Kubernetes config: %s", err)
+	}
+	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Fatalf("unable to create a Kubernetes client: %s", err)
 	}
+
+	client := clientset.Certificates()
 
 	// Generate a private key, pem encode it, and save it to the filesystem.
 	// The private key will be used to create a certificate signing request (csr)
@@ -163,64 +168,54 @@ func main() {
 	// Submit a certificate signing request, wait for it to be approved, then save
 	// the signed certificate to the file system.
 	certificateSigningRequest := &certificates.CertificateSigningRequest{
-		Metadata: &v1.ObjectMeta{
-			Name: k8s.String(certificateSigningRequestName),
+		ObjectMeta: v1.ObjectMeta{
+			Name: certificateSigningRequestName,
 		},
-		Spec: &certificates.CertificateSigningRequestSpec{
-			Groups:   []string{"system:authenticated"},
-			Request:  certificateRequestBytes,
-			KeyUsage: []string{"digital signature", "key encipherment", "server auth", "client auth"},
+		Spec: certificates.CertificateSigningRequestSpec{
+			Groups:  []string{"system:authenticated"},
+			Request: certificateRequestBytes,
+			Usages:  []certificates.KeyUsage{"digital signature", "key encipherment", "server auth", "client auth"},
 		},
 	}
 
-	_, err = client.CertificatesV1Beta1().CreateCertificateSigningRequest(context.Background(), certificateSigningRequest)
+	csr, err := client.CertificateSigningRequests().Create(certificateSigningRequest)
 	if err != nil {
 		log.Fatalf("unable to create the certificate signing request: %s", err)
 	}
 
 	log.Println("approving CSR...")
-	for {
-		csr, err := client.CertificatesV1Beta1().GetCertificateSigningRequest(context.Background(), certificateSigningRequestName)
-		if err != nil {
-			log.Printf("unable to retrieve certificate signing request (%s): %s", certificateSigningRequestName, err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
 
-		approvalType := "Approved"
-		reason := "InitContainerApprove"
-		message := "This CSR was approved by InitContainer certificate approve."
-		var timeNow v1.Time
-		timeNow.GetSeconds()
-		fmt.Printf("%#v\n", timeNow)
-		csr.Status.Conditions = append(csr.Status.Conditions, &certificates.CertificateSigningRequestCondition{
-			Type:           &approvalType,
-			Reason:         &reason,
-			Message:        &message,
-			LastUpdateTime: &timeNow,
-		})
-		_, err = client.CertificatesV1Beta1().UpdateCertificateSigningRequest(context.Background(), csr)
-		if err != nil {
-			log.Fatalf("unable to approve the certificate signing request: %s", err)
-		}
-		break
+	csr.Status.Conditions = append(csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
+		Type:           "Approved",
+		Reason:         "InitContainerApprove",
+		Message:        "This CSR was approved by InitContainer certificate approve.",
+		LastUpdateTime: v1.Now(),
+	})
+
+	csr, err = client.CertificateSigningRequests().UpdateApproval(csr)
+	if err != nil {
+		log.Fatalf("unable to approve the certificate signing request: %s", err)
 	}
 
 	var certificate []byte
 	log.Println("waiting for certificate...")
 	for {
-		csr, err := client.CertificatesV1Beta1().GetCertificateSigningRequest(context.Background(), certificateSigningRequestName)
+		csr, err := client.CertificateSigningRequests().Get(certificateSigningRequestName, v1.GetOptions{})
 		if err != nil {
 			log.Printf("unable to retrieve certificate signing request (%s): %s", certificateSigningRequestName, err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
-
-		if len(csr.GetStatus().GetConditions()) > 0 {
-			if *csr.GetStatus().GetConditions()[0].Type == "Approved" {
-				certificate = csr.GetStatus().Certificate
+		approved := false
+		for _, c := range csr.Status.Conditions {
+			if c.Type == "Approved" && csr.Status.Certificate != nil {
+				certificate = csr.Status.Certificate
+				approved = true
 				break
 			}
+		}
+		if approved == true {
+			break
 		}
 
 		log.Printf("certificate signing request (%s) not approved; trying again in 5 seconds", certificateSigningRequestName)
