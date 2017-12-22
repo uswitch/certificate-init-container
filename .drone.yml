@@ -11,6 +11,15 @@ pipeline:
       - go test -v ./...
       - CGO_ENABLED=0 go build -o bin/certificate-init-container .
 
+  publish_latest:
+    when:
+      event: [ push, pull_request ]
+    image: plugins/docker
+    repo: registry.usw.co/cloud/certificate-init-container
+    tags:
+      - latest
+      - "${DRONE_COMMIT}"
+
   publish:
     when:
       event: push
@@ -18,5 +27,5 @@ pipeline:
     image: plugins/docker
     repo: registry.usw.co/cloud/certificate-init-container
     tags:
-      - latest
+      - stable
       - "${DRONE_COMMIT}"
