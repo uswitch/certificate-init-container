@@ -44,6 +44,7 @@ var (
 	serviceIPs         string
 	serviceNames       string
 	subdomain          string
+	approve            bool
 )
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 	flag.StringVar(&serviceNames, "service-names", "", "service names that resolve to this Pod; comma separated")
 	flag.StringVar(&serviceIPs, "service-ips", "", "service IP addresses that resolve to this Pod; comma separated")
 	flag.StringVar(&subdomain, "subdomain", "", "subdomain as defined by pod.spec.subdomain")
+	flag.BoolVar(&approve, "approve", false, "approve certificates when set to true")
 	flag.Parse()
 
 	certificateSigningRequestName := fmt.Sprintf("%s-%s", podName, namespace)
@@ -160,7 +162,7 @@ func main() {
 
 	csrFile := path.Join(certDir, "tls.csr")
 	if err := ioutil.WriteFile(csrFile, certificateRequestBytes, 0644); err != nil {
-		log.Fatal("unable to %s, error: %s", csrFile, err)
+		log.Fatalf("unable to %s, error: %s", csrFile, err)
 	}
 
 	log.Printf("wrote %s", csrFile)
@@ -183,18 +185,20 @@ func main() {
 		log.Fatalf("unable to create the certificate signing request: %s", err)
 	}
 
-	log.Println("approving CSR...")
+	if approve {
+		log.Println("approving CSR...")
 
-	csr.Status.Conditions = append(csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
-		Type:           "Approved",
-		Reason:         "InitContainerApprove",
-		Message:        "This CSR was approved by InitContainer certificate approve.",
-		LastUpdateTime: v1.Now(),
-	})
+		csr.Status.Conditions = append(csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
+			Type:           "Approved",
+			Reason:         "InitContainerApprove",
+			Message:        "This CSR was approved by InitContainer certificate approve.",
+			LastUpdateTime: v1.Now(),
+		})
 
-	csr, err = client.CertificateSigningRequests().UpdateApproval(csr)
-	if err != nil {
-		log.Fatalf("unable to approve the certificate signing request: %s", err)
+		csr, err = client.CertificateSigningRequests().UpdateApproval(csr)
+		if err != nil {
+			log.Fatalf("unable to approve the certificate signing request: %s", err)
+		}
 	}
 
 	var certificate []byte
