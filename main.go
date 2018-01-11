@@ -181,7 +181,7 @@ func main() {
 	}
 
 	csr, err := client.CertificateSigningRequests().Get(certificateSigningRequestName, v1.GetOptions{})
-	if csr != nil {
+	if csr.Status.Certificate != nil {
 		err = client.CertificateSigningRequests().Delete(certificateSigningRequestName, &v1.DeleteOptions{})
 		if err != nil {
 			log.Fatalf("unable to delete the certificate signing request: %s", err)
