@@ -180,7 +180,20 @@ func main() {
 		},
 	}
 
+<<<<<<< Updated upstream
 	csr, err := client.CertificateSigningRequests().Create(certificateSigningRequest)
+=======
+	csr, err := client.CertificateSigningRequests().Get(certificateSigningRequestName, v1.GetOptions{})
+	if csr != nil {
+		log.Println("csr:", csr)
+		err = client.CertificateSigningRequests().Delete(certificateSigningRequestName, &v1.DeleteOptions{})
+		if err != nil {
+			log.Fatalf("unable to delete the certificate signing request: %s", err)
+		}
+	}
+
+	csr, err = client.CertificateSigningRequests().Create(certificateSigningRequest)
+>>>>>>> Stashed changes
 	if err != nil {
 		log.Fatalf("unable to create the certificate signing request: %s", err)
 	}
