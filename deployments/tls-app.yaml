@@ -13,64 +13,91 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: certificate-init
----
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tls-app
+  creationTimestamp: null
   labels:
     app: tls-app
+  name: tls-app
 spec:
+  progressDeadlineSeconds: 600
   replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: tls-app
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
+      creationTimestamp: null
       labels:
         app: tls-app
     spec:
-      serviceAccountName: certificate-init
-      initContainers:
-        - name: certificate-init-container
-          image: gcr.io/hightowerlabs/certificate-init-container:0.0.1
-          imagePullPolicy: Always
-          env:
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-          args:
-            - "-additional-dnsnames=example.com"
-            - "-cert-dir=/etc/tls"
-            - "-namespace=$(NAMESPACE)"
-            - "-pod-ip=$(POD_IP)"
-            - "-pod-name=$(POD_NAME)"
-            - "-service-names=tls-app"            
-          volumeMounts:
-            - name: tls
-              mountPath: /etc/tls
       containers:
-        - name: tls-app
-          image: gcr.io/hightowerlabs/tls-app:1.0.0
-          imagePullPolicy: Always
-          args:
-            - "-tls-cert=/etc/tls/tls.crt"
-            - "-tls-key=/etc/tls/tls.key"
-          ports:
-            - containerPort: 443 
-          resources:
-            limits:
-              memory: "50Mi"
-              cpu: "100m"
-          volumeMounts:
-            - name: tls
-              mountPath: /etc/tls
+      - args:
+        - -tls-cert=/etc/tls/tls.crt
+        - -tls-key=/etc/tls/tls.key
+        image: gcr.io/hightowerlabs/tls-app:1.0.0
+        imagePullPolicy: Always
+        name: tls-app
+        ports:
+        - containerPort: 443
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 50Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/tls
+          name: tls
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - args:
+        - -additional-dnsnames=example.com
+        - -cert-dir=/etc/tls
+        - -namespace=$(NAMESPACE)
+        - -pod-ip=$(POD_IP)
+        - -pod-name=$(POD_NAME)
+        - -service-names=tls-app
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        image: gcr.io/hightowerlabs/certificate-init-container:0.0.1
+        imagePullPolicy: Always
+        name: certificate-init-container
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/tls
+          name: tls
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: certificate-init
+      serviceAccountName: certificate-init
+      terminationGracePeriodSeconds: 30
       volumes:
-        - name: tls
-          emptyDir: {}
+      - emptyDir: {}
+        name: tls
+status: {}
